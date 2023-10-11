@@ -328,10 +328,15 @@ Pcap.prototype.readPacketInternal = function (posArg, hpLenArg, cb) {
 
       // Uncompress if needed
       if (this.uncompressedBits) {
-        if (this.compression === 'gzip') {
-          readBuffer = zlib.inflateRawSync(readBuffer, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
-        } else if (this.compression === 'zstd') {
-          readBuffer = decompressSync(readBuffer);
+        try {
+          if (this.compression === 'gzip') {
+            readBuffer = zlib.inflateRawSync(readBuffer, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+          } else if (this.compression === 'zstd') {
+            readBuffer = decompressSync(readBuffer);
+          }
+        } catch (e) {
+          console.log('PCAP uncompress issue', this.key, pos, buffer.length, bytesRead, e);
+          return cb(undefined);
         }
       }
 
@@ -505,18 +510,60 @@ Pcap.prototype.udp = function (buffer, obj, pos) {
   };
 
   obj.udp.data = buffer.slice(8);
-  if ((obj.udp.dport === 0x12b5) && (obj.udp.data.length > 8) && ((obj.udp.data[0] & 0x77) === 0) && ((obj.udp.data[1] & 0xb7) === 0)) {
+  const data = obj.udp.data;
+
+  // vxlan
+  if ((obj.udp.dport === 4789) && (data.length > 8) && ((data[0] & 0x77) === 0) && ((data[1] & 0xb7) === 0)) {
     this.ether(buffer.slice(16), obj, pos + 16);
   }
 
+  // vxlan gpe
+  if ((obj.udp.dport === 4790) && (data.length > 8) && ((data[0] & 0xf0) === 0) && ((data[1] & 0xff) === 0)) {
+    switch (data[3]) {
+    case 1:
+      return this.ip4(buffer.slice(16), obj, pos + 16);
+    case 2:
+      return this.ip6(buffer.slice(16), obj, pos + 16);
+    case 3:
+      return this.ether(buffer.slice(16), obj, pos + 16);
+    case 4:
+      // TODO NSH
+      break;
+    }
+  }
+
   // geneve
-  if ((obj.udp.dport === 6081) && (obj.udp.data.length > 8) && ((obj.udp.data[0] & 0xc0) === 0) && ((obj.udp.data[1] & 0x3f) === 0)) {
-    const optlen = obj.udp.data[0] & 0x3f;
-    const protocol = (obj.udp.data[2] << 8) | obj.udp.data[3];
+  if ((obj.udp.dport === 6081) && (data.length > 8) && ((data[0] & 0xc0) === 0) && ((data[1] & 0x3f) === 0)) {
+    const optlen = data[0] & 0x3f;
+    const protocol = (data[2] << 8) | data[3];
     const offset = 8 + optlen * 4;
 
     if (8 + offset < buffer.length) {
       this.ethertyperun(protocol, buffer.slice(8 + offset), obj, pos + 8 + offset);
+    }
+  }
+
+  // gtp
+  if ((obj.udp.dport === 2152) && (data.length > 8) && ((data[0] & 0xf0) === 0x30) && (data[1] === 0xff)) {
+    let offset = 8;
+    let next = 0;
+    if (data[0] & 0x7) {
+      offset += 3;
+      next = data[offset];
+      offset++;
+    }
+    while (next !== 0) {
+      const extlen = data[offset];
+      offset++;
+      offset += extlen * 4 - 2;
+      next = data[offset];
+      offset++;
+    }
+
+    if ((data[offset] & 0xf0) === 0x60) {
+      this.ip6(data.slice(offset), obj, pos + offset);
+    } else {
+      this.ip4(data.slice(offset), obj, pos + offset);
     }
   }
 };
@@ -1284,15 +1331,16 @@ Pcap.packetFlow = function (session, packets, numPackets, cb) {
 Pcap.key = function (packet) {
   if (!packet.ip) { return packet.ether.addr1; }
   const sep = packet.ip.addr1.includes(':') ? '.' : ':';
+  const addr1 = ipaddr.parse(packet.ip.addr1).toString();
   switch (packet.ip.p) {
   case 6: // tcp
-    return `${packet.ip.addr1}${sep}${packet.tcp.sport}`;
+    return `${addr1}${sep}${packet.tcp.sport}`;
   case 17: // udp
-    return `${packet.ip.addr1}${sep}${packet.udp.sport}`;
+    return `${addr1}${sep}${packet.udp.sport}`;
   case 132: // sctp
-    return `${packet.ip.addr1}${sep}${packet.sctp.sport}`;
+    return `${addr1}${sep}${packet.sctp.sport}`;
   default:
-    return packet.ip.addr1;
+    return addr1;
   }
 };
 
@@ -1305,7 +1353,7 @@ Pcap.keyFromSession = function (session) {
   case 132: // sctp
   case 'sctp':
     const sep = session.source.ip.includes(':') ? '.' : ':';
-    return `${session.source.ip}${sep}${session.source.port}`;
+    return `${ipaddr.parse(session.source.ip).toString()}${sep}${session.source.port}`;
   default:
     return session.source.ip;
   }

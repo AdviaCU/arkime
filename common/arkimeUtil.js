@@ -21,10 +21,24 @@ const memjs = require('memjs');
 const Auth = require('./auth');
 const util = require('util');
 const fs = require('fs');
+const bodyParser = require('body-parser');
+const sjson = require('secure-json-parse');
 
 class ArkimeUtil {
   static debug = 0;
+  static adminRole;
+
   // ----------------------------------------------------------------------------
+  /**
+   * A json body parser that doesn't allow anything that looks like "__proto__": or "constructor":
+   */
+  static jsonParser = bodyParser.json({
+    verify: function (req, res, buf, encoding) {
+      sjson.parse(buf);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   /**
    * For both arrays and single values escape entities
    */
@@ -323,7 +337,7 @@ class ArkimeUtil {
       }
 
       userId = req.user.userId;
-    } else if (!req.user.hasRole('usersAdmin')) {
+    } else if (!req.user.hasRole('usersAdmin') || (!req.url.startsWith('/api/user/password') && ArkimeUtil.adminRole && !req.user.hasRole(ArkimeUtil.adminRole))) {
       // user is trying to get another user's settings without admin privilege
       return res.serverError(403, 'Need admin privileges');
     } else {

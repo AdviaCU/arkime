@@ -15,7 +15,7 @@ GLIB=2.72.4
 YARA=4.0.2
 MAXMIND=1.4.3
 PCAP=1.10.4
-CURL=7.78.0
+CURL=8.4.0
 LUA=5.3.6
 DAQ=2.0.7
 NGHTTP2=1.44.0
@@ -25,7 +25,7 @@ KAFKA=1.5.3
 # node v18 doesn't support RHEL 7
 # RHEL 7 EOL is July 1, 2024
 # node v16 EOL is Sept 11, 2023
-NODE=16.19.1
+NODE=16.20.2
 
 TDIR="/opt/arkime"
 DOPFRING=0
@@ -137,7 +137,7 @@ fi
 
 if [ -f "/etc/debian_version" ]; then
   . /etc/os-release
-  if [ "$VERSION_CODENAME" = "bionic" ]; then
+  if [[ "$VERSION_CODENAME" == "bionic" || "$VERSION_CODENAME" == "focal" ]]; then
       BUILDZSTD=1
   fi
   sudo apt-get -qq install wget curl libpcre3-dev uuid-dev libmagic-dev pkg-config g++ flex bison zlib1g-dev libffi-dev gettext libgeoip-dev make libjson-perl libbz2-dev libwww-perl libpng-dev xz-utils libffi-dev libssl-dev libreadline-dev libtool libyaml-dev dh-autoreconf libsocket6-perl libtest-differences-perl libzstd-dev

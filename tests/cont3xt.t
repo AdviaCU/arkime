@@ -1,5 +1,5 @@
 # Test cont3xt.js
-use Test::More tests => 88;
+use Test::More tests => 138;
 use Test::Differences;
 use Data::Dumper;
 use MolochTest;
@@ -7,12 +7,15 @@ use JSON;
 use strict;
 
 esPost("/cont3xt_links/_delete_by_query?conflicts=proceed&refresh", '{ "query": { "match_all": {} } }');
+esPost("/cont3xt_overviews/_delete_by_query?conflicts=proceed&refresh", '{ "query": { "match_all": {} } }');
 esPost("/cont3xt_history/_delete_by_query?conflicts=proceed&refresh", '{ "query": { "match_all": {} } }');
 esPost("/cont3xt_views/_delete_by_query?conflicts=proceed&refresh", '{ "query": { "match_all": {} } }');
 
 my $token = getCont3xtTokenCookie();
 
 my $json;
+
+### LINK GROUPS
 
 # Make sure delete worked
 $json = cont3xtGet('/api/linkGroup');
@@ -210,8 +213,7 @@ $json = cont3xtPutToken('/api/linkGroup', to_json({
     name => "foo1",
     url => "http://www.foo.com",
     itypes => ["ip", "domain"]
-  }],
-  __proto__ => { bad => "stuff" }
+  }]
 }), $token);
 eq_or_diff($json, from_json('{"success": true, "text": "Success"}'));
 
@@ -250,6 +252,344 @@ eq_or_diff($json, from_json('{"success": false, "text": "LinkGroup not found"}')
 $json = cont3xtGet('/api/linkGroup');
 eq_or_diff($json, from_json('{"success": true, "linkGroups": []}'));
 
+### OVERVIEWS
+$json = cont3xtGet('/api/overview');
+eq_or_diff($json, from_json('{"success": true, "overviews": []}'));
+
+# Bad data
+$json = cont3xtPutToken("/api/overview", to_json({
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Missing name"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Missing title"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Missing iType"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "foobar",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Invalid iType"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Missing fields array"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => 1
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "fields array must be an array"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [1]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Field must be object"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Field type must be either \"linked\" or \"custom\""}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Field missing from"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Linked field missing field"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field",
+        alias => 1
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Linked field alias must be a string or undefined"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "custom",
+        from => "Foo"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Custom field must be a string or object"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type   => "custom",
+        from => "Foo",
+        custom => 1
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Custom field must be a string or object"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type   => "custom",
+        from => "Foo",
+        custom => {
+            label => "foo name",
+            field => "foo.bar"
+        },
+        field  => "baz"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Custom field must not have field"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type   => "custom",
+        from => "Foo",
+        custom => {
+            label => "foo name",
+            field => "foo.bar"
+        },
+        alias  => "foo-ier name"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Custom field must not have alias"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => 1,
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "viewRoles must be an array of strings"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => [1],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "viewRoles must be an array of strings"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => 1,
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "editRoles must be an array of strings"}'));
+
+$json = cont3xtPutToken("/api/overview", to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => [1],
+    fields => [{
+        type => "linked",
+        from => "Foo",
+        field => "foo_field"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": false, "text": "editRoles must be an array of strings"}'));
+
+# update overview requires token
+$json = cont3xtPut('/api/overview', to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from  => "Foo",
+        field => "foo_field"
+    }]
+}));
+eq_or_diff($json, from_json('{"success": false, "text": "Missing token"}'));
+
+$json = cont3xtPutToken('/api/overview', to_json({
+    name => "Overview1",
+    title => "Overview of %{query}",
+    iType => "domain",
+    viewRoles => ["superAdmin"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from  => "Foo",
+        field => "foo_field"
+    }, {
+        type => "custom",
+        from => "Foo",
+        custom => {
+            field  => "foo.bar",
+            label  => "Foo Bar",
+            type   => "array"
+        }
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": true, "text": "Success"}'));
+
+$json = cont3xtGet('/api/overview');
+my $id = $json->{overviews}->[0]->{_id};
+delete $json->{overviews}->[0]->{_id};
+eq_or_diff($json, from_json('{"overviews":[{"creator":"anonymous","_editable":true,"_viewable": true, "viewRoles":["superAdmin"],"fields":[{"type":"linked","from":"Foo","field":"foo_field"},{"type":"custom","from":"Foo","custom":{"field":"foo.bar","label":"Foo Bar","type":"array"}}],"name":"Overview1","title":"Overview of %{query}","iType":"domain","editRoles":["superAdmin"]}],"success":true}'));
+
+$json = cont3xtPutToken("/api/overview/$id", to_json({
+    name => "Overview1 v2",
+    title => "Overview v2 of %{query}",
+    iType => "ip",
+    viewRoles => ["cont3xtUser"],
+    editRoles => ["superAdmin"],
+    fields => [{
+        type => "linked",
+        from  => "Foo",
+        field => "bar_field"
+    }, {
+        type   => "custom",
+        from  => "Foo",
+        custom => "foo.bar"
+    }]
+}), $token);
+eq_or_diff($json, from_json('{"success": true, "text": "Success"}'));
+
+$json = cont3xtGet('/api/overview');
+my $id = $json->{overviews}->[0]->{_id};
+delete $json->{overviews}->[0]->{_id};
+eq_or_diff($json, from_json('{"overviews":[{"creator":"anonymous","_editable":true,"_viewable": true, "viewRoles":["cont3xtUser"],"fields":[{"type":"linked","from":"Foo","field":"bar_field"},{"type":"custom","from":"Foo","custom":"foo.bar"}],"name":"Overview1 v2","title":"Overview v2 of %{query}","iType":"ip","editRoles":["superAdmin"]}],"success":true}'));
+
+# delete overview requires token
+$json = cont3xtDelete("/api/overview/$id", "{}");
+eq_or_diff($json, from_json('{"success": false, "text": "Missing token"}'));
+
+$json = cont3xtDeleteToken("/api/overview/$id", "{}", $token);
+eq_or_diff($json, from_json('{"success": true, "text": "Success"}'));
+
+$json = cont3xtDeleteToken("/api/overview/foo", "{}", $token);
+eq_or_diff($json, from_json('{"success": false, "text": "Overview not found"}'));
+
+$json = cont3xtGet('/api/overview');
+eq_or_diff($json, from_json('{"success": true, "overviews": []}'));
+
 ### ROLES
 $json = cont3xtGet('/api/roles');
 eq_or_diff($json, from_json('{"success": false, "text": "Missing token"}'));
@@ -266,10 +606,11 @@ $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com"
 }));
 
+is($json->[0]->{purpose}, "init");
 is($json->[0]->{sent}, 0);
 is($json->[0]->{text}, "more to follow");
-is($json->[0]->{itype}, "domain");
-is($json->[0]->{success}, 1);
+is($json->[0]->{indicator}->{itype}, "domain");
+is($json->[0]->{indicator}->{query}, "example.com");
 cmp_ok (scalar @{$json}, ">", 10);
 
 $json = cont3xtPost('/api/integration/search', to_json({
@@ -277,13 +618,18 @@ $json = cont3xtPost('/api/integration/search', to_json({
   doIntegrations => ["dns"]
 }));
 
+is($json->[0]->{purpose}, "init");
 is($json->[0]->{sent}, 0);
 is($json->[0]->{text}, "more to follow");
-is($json->[0]->{itype}, "domain");
-is($json->[0]->{success}, 1);
-is($json->[1]->{finished}, 1);
-is($json->[1]->{resultCount}, 0);
-is (scalar @{$json}, 2);
+is($json->[0]->{indicator}->{itype}, "domain");
+is($json->[0]->{indicator}->{query}, "example.com");
+is($json->[1]->{purpose}, "link");
+is($json->[1]->{parentIndicator}, undef);
+is($json->[1]->{indicator}->{itype}, "domain");
+is($json->[1]->{indicator}->{query}, "example.com");
+is($json->[2]->{purpose}, "finish");
+is($json->[2]->{resultCount}, 0);
+is (scalar @{$json}, 3);
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
@@ -291,45 +637,63 @@ $json = cont3xtPost('/api/integration/search', to_json({
   doIntegrations => ["DNS"]
 }));
 
+is($json->[0]->{purpose}, "init"); # initial integration chunk
 is($json->[0]->{sent}, 0);
 is($json->[0]->{text}, "more to follow");
-is($json->[0]->{itype}, "domain");
-is($json->[0]->{success}, 1);
-is($json->[2]->{finished}, 1);
-is($json->[2]->{resultCount}, 0);
-is (scalar @{$json}, 3);
+is($json->[0]->{indicator}->{query}, "example.com");
+is($json->[0]->{indicator}->{itype}, "domain");
+
+is($json->[1]->{purpose}, "link");
+is($json->[1]->{indicator}->{query}, "example.com");
+is($json->[1]->{indicator}->{itype}, "domain");
+is($json->[1]->{parentIndicator}, undef);
+
+is($json->[2]->{purpose}, "enhance");
+is($json->[2]->{indicator}->{itype}, "ip");
+is($json->[3]->{purpose}, "link");
+is($json->[3]->{indicator}->{itype}, "ip");
+is($json->[3]->{parentIndicator}->{query}, "example.com");
+is($json->[3]->{parentIndicator}->{itype}, "domain");
+
+is($json->[6]->{purpose}, "data");
+is($json->[6]->{indicator}->{query}, "example.com");
+is($json->[6]->{indicator}->{itype}, "domain");
+
+is($json->[7]->{purpose}, "finish"); # last integration chunk
+is($json->[7]->{resultCount}, 0);
+is (scalar @{$json}, 8);
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
   tags => "badtag",
   doIntegrations => ["DNS"]
 }));
-eq_or_diff($json, from_json('{"success": false, "text": "tags must be an array when present"}'));
+eq_or_diff($json, from_json('{"purpose": "error", "text": "tags must be an array when present"}'));
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
   tags => [1],
   doIntegrations => ["DNS"]
 }));
-eq_or_diff($json, from_json('{"success": false, "text": "every tag must be a string"}'));
+eq_or_diff($json, from_json('{"purpose": "error", "text": "every tag must be a string"}'));
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
   doIntegrations => 1
 }));
-eq_or_diff($json, from_json('{"success": false, "text": "doIntegrations must be an array when present"}'));
+eq_or_diff($json, from_json('{"purpose": "error", "text": "doIntegrations must be an array when present"}'));
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
   doIntegrations => [1]
 }));
-eq_or_diff($json, from_json('{"success": false, "text": "every doIntegration must be a string"}'));
+eq_or_diff($json, from_json('{"purpose": "error", "text": "every doIntegration must be a string"}'));
 
 $json = cont3xtPost('/api/integration/search', to_json({
   query => "example.com",
   viewId => 1
 }));
-eq_or_diff($json, from_json('{"success": false, "text": "viewId must be a string when present"}'));
+eq_or_diff($json, from_json('{"purpose": "error", "text": "viewId must be a string when present"}'));
 
 esGet("/_flush");
 esGet("/_refresh");
@@ -399,8 +763,7 @@ eq_or_diff($json, from_json('{"success": false, "text": "integrations must conta
 
 # Good
 $json = cont3xtPostToken('/api/view', to_json({
-  name => "view1",
-  __proto__ => { bad => "stuff" }
+  name => "view1"
 }), $token);
 delete $json->{view}->{_id};
 eq_or_diff($json, from_json('{"view":{"_viewable":true,"name":"view1","_editable":true,"creator":"anonymous"},"success":true,"text":"Success"}'));
@@ -449,6 +812,9 @@ eq_or_diff($json, from_json('{"success": false, "text": "Missing token"}'));
 
 $json = cont3xtPutToken('/api/integration/settings', 'hi', $token);
 is ($json, "SyntaxError: Unexpected token h in JSON at position 0");
+
+$json = cont3xtPutToken('/api/integration/settings', '{"__proto__": {"foo": 1}}', $token);
+is ($json, "SyntaxError: Object contains forbidden prototype property");
 
 ### Classify
 $json = cont3xtPost('/regressionTests/classify', '["aol.com", "1.2.3.4", "a----b.com", "https://a----b.com", "703-867-5309", "text", "foo@example.com", "d07708229fb0d2d513c82f36e5cdc68f", "25425d55a6af7586bf68c3989f0d4d89ffbb1641"]');

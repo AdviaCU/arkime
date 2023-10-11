@@ -17,6 +17,8 @@
           <br>
           <code>'V'</code> - set focus to the view dropdown search filter
           <br>
+          <code>'O'</code> - set focus to the overview dropdown search filter
+          <br>
           <code>'G'</code> - set focus to the tag input
           <br>
           <code>'E'</code> - toggle cache On/Off
@@ -55,6 +57,7 @@ import { mapGetters } from 'vuex';
 import Cont3xtNavbar from '@/utils/Navbar';
 import UserService from '@/components/services/UserService';
 import LinkService from '@/components/services/LinkService';
+import OverviewService from '@/components/services/OverviewService';
 import Cont3xtService from '@/components/services/Cont3xtService';
 import Cont3xtUpgradeBrowser from '@/components/pages/UpgradeBrowser';
 import KeyboardShortcuts from '../../../common/vueapp/KeyboardShortcuts';
@@ -91,8 +94,12 @@ export default {
       this.$store.commit('SET_IMMEDIATE_SUBMISSION_READY', true);
     });
     LinkService.getLinkGroups();
+    OverviewService.getOverviews();
     UserService.getUser();
     UserService.getRoles();
+    UserService.getUserSettings().then((response) => {
+      this.$store.commit('SET_SELECTED_OVERVIEW_ID_MAP', response.selectedOverviews ?? {});
+    });
 
     // watch for keyup/down events for the entire app
     // the rest of the app should compute necessary values with:
@@ -127,6 +134,10 @@ export default {
       case 86: // v
         // focus on view dropdown selector
         this.$store.commit('SET_FOCUS_VIEW_SEARCH', true);
+        break;
+      case 79: // o (should change to 'KeyO' when merged into dev5)
+        // focus on overview dropdown selector
+        this.$store.commit('SET_FOCUS_OVERVIEW_SEARCH', true);
         break;
       case 71: // g
         // focus on tag input

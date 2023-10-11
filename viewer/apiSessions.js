@@ -18,6 +18,7 @@ const version = require('../common/version');
 const molochparser = require('./molochparser.js');
 const internals = require('./internals');
 const ViewerUtils = require('./viewerUtils');
+const ipaddr = require('ipaddr.js');
 
 class SessionAPIs {
   // --------------------------------------------------------------------------
@@ -584,7 +585,7 @@ class SessionAPIs {
           SessionAPIs.#localSessionDetailReturn(req, res, session, results || []);
         });
       } else if (packets[0].ip.p === 6) {
-        const key = session.source.ip;
+        const key = ipaddr.parse(session.source.ip).toString();
         Pcap.reassemble_tcp(packets, +req.query.packets || 200, key + ':' + session.source.port, (err, results) => {
           session._err = err;
           SessionAPIs.#localSessionDetailReturn(req, res, session, results || []);
@@ -1627,7 +1628,7 @@ class SessionAPIs {
           return doneCb(err, session, results);
         });
       } else if (packets[0].ip.p === 6) {
-        const key = session.source.ip;
+        const key = ipaddr.parse(session.source.ip).toString();
         Pcap.reassemble_tcp(packets, numPackets, key + ':' + session.source.port, (err, results) => {
           return doneCb(err, session, results);
         });
@@ -2429,6 +2430,11 @@ class SessionAPIs {
     }
 
     SessionAPIs.buildSessionQuery(req, (err, query, indices) => {
+      if (err) {
+        res.status(403);
+        return res.end(err);
+      }
+
       delete query.sort;
       delete query.aggregations;
 
@@ -3146,13 +3152,15 @@ class SessionAPIs {
     ViewerUtils.noCache(req, res);
     res.statusCode = 200;
 
+    const cluster = req.query.remoteCluster ?? req.query.cluster;
+
     if (!ArkimeUtil.isString(req.query.saveId)) { return res.serverError(200, 'Missing saveId'); }
-    if (!ArkimeUtil.isString(req.query.cluster)) { return res.serverError(200, 'Missing cluster'); }
-    if (!internals.remoteClusters || !internals.remoteClusters[req.query.cluster]) { return res.serverError(200, 'Unknown cluster'); }
+    if (!ArkimeUtil.isString(cluster)) { return res.serverError(200, 'Missing cluster'); }
+    if (!internals.remoteClusters || !internals.remoteClusters[cluster]) { return res.serverError(200, 'Unknown cluster'); }
 
     const options = {
       user: req.user,
-      cluster: req.query.cluster,
+      cluster,
       id: req.params.id,
       saveId: req.query.saveId,
       tags: req.query.tags,
@@ -3181,9 +3189,11 @@ class SessionAPIs {
     ViewerUtils.noCache(req, res);
     res.statusCode = 200;
 
+    const cluster = req.query.remoteCluster ?? req.query.cluster;
+
     if (!ArkimeUtil.isString(req.query.saveId)) { return res.serverError(200, 'Missing saveId'); }
-    if (!ArkimeUtil.isString(req.query.cluster)) { return res.serverError(200, 'Missing cluster'); }
-    if (!internals.remoteClusters || !internals.remoteClusters[req.query.cluster]) { return res.serverError(200, 'Unknown cluster'); }
+    if (!ArkimeUtil.isString(cluster)) { return res.serverError(200, 'Missing cluster'); }
+    if (!internals.remoteClusters || !internals.remoteClusters[cluster]) { return res.serverError(200, 'Unknown cluster'); }
     if (req.body.tags !== undefined && !ArkimeUtil.isString(req.body.tags, 0)) { return res.serverError(200, 'When present tags must be a string'); }
     if (req.body.ids === undefined) { return res.serverError(200, 'Missing ids'); }
 
@@ -3192,7 +3202,7 @@ class SessionAPIs {
     ids.forEach((id) => {
       const options = {
         user: req.user,
-        cluster: req.query.cluster,
+        cluster,
         id,
         saveId: req.query.saveId,
         tags: req.body.tags,
@@ -3220,8 +3230,10 @@ class SessionAPIs {
    * @param {SessionsQuery} query - The request query to filter sessions, only used if ids isn't provided
    */
   static sendSessions (req, res) {
-    if (!ArkimeUtil.isString(req.body.cluster)) { return res.serverError(200, 'Missing cluster'); }
-    if (!internals.remoteClusters || !internals.remoteClusters[req.body.cluster]) { return res.serverError(200, 'Unknown cluster'); }
+    const cluster = req.body.remoteCluster ?? req.body.cluster;
+
+    if (!ArkimeUtil.isString(cluster)) { return res.serverError(200, 'Missing cluster'); }
+    if (!internals.remoteClusters || !internals.remoteClusters[cluster]) { return res.serverError(200, 'Unknown cluster'); }
     if (req.body.tags !== undefined && !ArkimeUtil.isString(req.body.tags, 0)) { return res.serverError(200, 'When present tags must be a string'); }
 
     if (req.body.ids) {

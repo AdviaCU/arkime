@@ -83,7 +83,7 @@ app.enable('jsonp callback');
 app.set('views', path.join(__dirname, '/views'));
 app.set('view engine', 'pug');
 
-app.use(bodyParser.json());
+app.use(ArkimeUtil.jsonParser);
 app.use(bodyParser.urlencoded({ limit: '5mb', extended: true }));
 
 app.use(compression());
@@ -717,7 +717,7 @@ function getSettingUserCache (req, res, next) {
   }
 
   // user is trying to get another user's settings without admin privilege
-  if (!req.user.hasRole('usersAdmin')) { return res.serverError(403, 'Need admin privileges'); }
+  if (!req.user.hasRole('usersAdmin') || !req.user.hasRole('arkimeAdmin')) { return res.serverError(403, 'Need admin privileges'); }
 
   User.getUserCache(req.query.userId, (err, user) => {
     if (err || !user) {
@@ -1094,15 +1094,19 @@ function expireCheckAll () {
 // APIs disabled in demoMode, needs to be before real callbacks
 if (Config.get('demoMode', false)) {
   console.log('WARNING - Starting in demo mode, some APIs disabled');
-  app.all(['/settings', '/users', '/history/list'], (req, res) => {
-    return res.send('Disabled in demo mode.');
-  });
-
-  app.get(['/user/cron', '/api/cron', '/api/user/cron', '/history/list'], (req, res) => {
-    return res.serverError(403, 'Disabled in demo mode.');
-  });
-
-  app.post(['/user/password/change', '/changePassword', '/api/user/password', '/tableState/:tablename'], (req, res) => {
+  app.all([
+    '/history/*',
+    '/api/histories',
+    '/api/history/*',
+    '/api/cron*',
+    '/api/user/cron*',
+    '/user/cron*',
+    '/user/password*',
+    '/api/user/password*'
+  ], (req, res, next) => {
+    if (req.user.hasRole('arkimeAdmin')) {
+      return next();
+    }
     return res.serverError(403, 'Disabled in demo mode.');
   });
 }
@@ -1456,7 +1460,7 @@ app.post( // cancel OpenSearch/Elasticsearch task endpoint
 app.post( // cancel OpenSearch/Elasticsearch task by opaque id endpoint
   ['/api/estasks/:id/cancelwith', '/estask/cancelById'],
   // should not have admin check so users can use, each user is name spaced
-  [ArkimeUtil.noCacheJson, logAction(), checkCookieToken],
+  [ArkimeUtil.noCacheJson, logAction(), checkCookieToken, User.checkPermissions(['hideStats'])],
   StatsAPIs.cancelUserESTask
 );
 
@@ -1942,7 +1946,7 @@ app.use(cspHeader, setCookie, (req, res) => {
     return res.status(403).send('Permission denied');
   }
 
-  if (req.path === '/settings' && Config.get('demoMode', false)) {
+  if (req.path === '/settings' && Config.get('demoMode', false) && !req.user.hasRole('usersAdmin')) {
     return res.status(403).send('Permission denied');
   }
 
@@ -2111,6 +2115,10 @@ process.on('unhandledRejection', (reason, p) => {
   console.trace('Unhandled Rejection at: Promise', p, 'reason:', reason, JSON.stringify(reason, false, 2));
   // application specific logging, throwing an error, or other logic here
 });
+
+// ALW - 5.0 Fix
+ArkimeUtil.debug = Config.debug;
+ArkimeUtil.adminRole = 'arkimeAdmin';
 
 Db.initialize({
   host: internals.elasticBase,

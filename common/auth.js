@@ -197,7 +197,7 @@ class Auth {
         secret: uuid(),
         resave: false,
         saveUninitialized: true,
-        cookie: { path: Auth.#basePath, secure: true, sameSite: 'Strict' }
+        cookie: { path: Auth.#basePath, secure: true, sameSite: Auth.#authConfig.cookieSameSite ?? 'Lax' }
       }));
       Auth.#authRouter.use(passport.initialize());
       Auth.#authRouter.use(passport.session());
@@ -335,7 +335,8 @@ class Auth {
           }
         });
         if (!authorized) {
-          return done('Not authorized');
+          console.log(`The required auth header '${Auth.#requiredAuthHeader}' expected '${Auth.#requiredAuthHeaderVal}' and has `, ArkimeUtil.sanitizeStr(authHeader));
+          return done('Bad authorization header');
         }
       }
 
@@ -391,6 +392,11 @@ class Auth {
             console.log(`AUTH: didn't find ${Auth.#authConfig.userIdField} in the userinfo`, userinfo);
           }
           return done(null, false);
+        }
+
+        if (userId.startsWith('role:')) {
+          console.log(`AUTH: User ${userId} Can not authenticate with role`);
+          return done('Can not authenticate with role');
         }
 
         async function oidcAuthCheck (err, user) {
@@ -553,6 +559,9 @@ class Auth {
 
   // ----------------------------------------------------------------------------
   static #dynamicCreate (userId, vars, cb) {
+    if (Auth.debug > 0) {
+      console.log('AUTH - #dynamicCreate', ArkimeUtil.sanitizeStr(userId));
+    }
     const nuser = JSON.parse(new Function('return `' + Auth.#userAutoCreateTmpl + '`;').call(vars));
     if (nuser.passStore === undefined) {
       nuser.passStore = Auth.pass2store(nuser.userId, crypto.randomBytes(48));
@@ -595,6 +604,9 @@ class Auth {
         req.url = req.url.replace(Auth.#basePath, '/');
       }
       if (err) {
+        if (Auth.debug > 0) {
+          console.log('AUTH: passport.authenticate fail', err);
+        }
         res.status(403);
         return res.send(JSON.stringify({ success: false, text: err }));
       } else {
@@ -740,9 +752,15 @@ class Auth {
 
   // ----------------------------------------------------------------------------
   // Decrypt the auth string into an object
-  // IV.E.H
   static auth2obj (auth, secret) {
+    // New json style
     if (auth[0] === '{') { return Auth.auth2objNext(auth, secret); }
+
+    // New json style, but still encoded, bad proxy probably
+    if (auth.startsWith('%7B%22')) { return Auth.auth2objNext(decodeURIComponent(auth), secret); }
+
+    // Old style, IV.E.H
+
     const parts = auth.split('.');
 
     if (parts.length !== 3) {

@@ -35,6 +35,7 @@ const systemRolesMapping = {
 };
 
 const adminRoles = ['usersAdmin', 'arkimeAdmin', 'parliamentAdmin', 'wiseAdmin', 'cont3xtAdmin'];
+const adminRolesWithSuper = ['superAdmin', 'usersAdmin', 'arkimeAdmin', 'parliamentAdmin', 'wiseAdmin', 'cont3xtAdmin'];
 
 const usersMissing = {
   userId: '',
@@ -616,8 +617,15 @@ class User {
 
     req.body.roles ??= [];
 
+    if (!User.validateRoles(req.body.roles)) {
+      return res.serverError(403, 'User roles must be system roles or start with "role:"');
+    }
+
     const rolesSet = await User.roles2ExpandedSet(req.body.roles);
     const iamSuperAdmin = req.user.hasRole('superAdmin');
+    if (isRole && (rolesSet.has(req.body.userId) || req.body.roles.includes(req.body.userId))) {
+      return res.serverError(403, 'Can\'t have circular role dependencies');
+    }
 
     if (isRole && req.body.roles.includes('superAdmin')) {
       return res.serverError(403, 'User defined roles can\'t have superAdmin');
@@ -758,8 +766,15 @@ class User {
 
     req.body.roles ??= [];
 
+    if (!User.validateRoles(req.body.roles)) {
+      return res.serverError(403, 'User roles must be system roles or start with "role:"');
+    }
+
     const rolesSet = await User.roles2ExpandedSet(req.body.roles);
     const iamSuperAdmin = req.user.hasRole('superAdmin');
+    if (isRole && (rolesSet.has(req.body.userId) || req.body.roles.includes(req.body.userId))) {
+      return res.serverError(403, 'Can\'t have circular role dependencies');
+    }
 
     if (isRole && req.body.roles.includes('superAdmin')) {
       return res.serverError(403, 'User defined roles can\'t have superAdmin');
@@ -927,11 +942,17 @@ class User {
     if (!req.user.hasRole('usersAdmin') && (Auth.store2ha1(req.user.passStore) !==
       Auth.store2ha1(Auth.pass2store(req.token.userId, req.body.currentPassword)) ||
       req.token.userId !== req.user.userId)) {
-      return res.serverError(403, 'New password mismatch');
+      return res.serverError(403, 'Password mismatch');
     }
 
-    if (!req.user.hasRole('superAdmin') && req.settingUser.hasRole('superAdmin')) {
-      return res.serverError(403, 'Not allowed to change superAdmin password');
+    // Skip this check if we are a superAdmin
+    if (!req.user.hasRole('superAdmin')) {
+      // Only change the password if we have the same admin roles(s)
+      for (const role of adminRolesWithSuper) {
+        if (!req.user.hasRole(role) && req.settingUser.hasRole(role)) {
+          return res.serverError(403, `Not allowed to change ${role} password`);
+        }
+      }
     }
 
     const user = req.settingUser;
@@ -999,6 +1020,21 @@ class User {
     }
 
     return allRoles;
+  }
+
+  /**
+   * Determines whether the roles are valid.
+   * Valid roles are system roles or roles that start with 'role:'
+   * @returns {boolean} true if the roles are valid, false otherwise.
+   */
+  static validateRoles (roles) {
+    for (const r of roles) {
+      if (!systemRolesMapping[r] && !r.startsWith('role:')) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /******************************************************************************/

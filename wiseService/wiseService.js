@@ -36,8 +36,7 @@ const cryptoLib = require('crypto');
 const favicon = require('serve-favicon');
 const uuid = require('uuid').v4;
 const helmet = require('helmet');
-const bp = require('body-parser');
-const jsonParser = bp.json();
+const jsonParser = ArkimeUtil.jsonParser;
 const axios = require('axios');
 const chalk = require('chalk');
 const version = require('../common/version');
@@ -1129,7 +1128,7 @@ app.post('/get', function (req, res) {
 });
 // ----------------------------------------------------------------------------
 /**
- * GET - Used by wise UI to retrieve all the sources
+ * GET - Used by wise UI to retrieve all the sources (unathenticated).
  *
  * @name "/sources"
  * @returns {string|array} All the sources
@@ -1139,7 +1138,7 @@ app.get('/sources', [ArkimeUtil.noCacheJson], (req, res) => {
 });
 // ----------------------------------------------------------------------------
 /**
- * GET - Used by wise UI to retrieve all the configuration definitions for the various sources.
+ * GET - Used by wise UI to retrieve all the configuration definitions for the various sources (unauthenticated).
  *
  * @name "/config/defs"
  * @returns {object}
@@ -1149,7 +1148,7 @@ app.get('/config/defs', [ArkimeUtil.noCacheJson], function (req, res) {
 });
 // ----------------------------------------------------------------------------
 /**
- * GET - Used by the wise UI to all the types known.
+ * GET - Used by the wise UI to all the types known (unathenticated).
  *
  * @name "/types"
  * @returns {string|array} - all the types
